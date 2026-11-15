@@ -1,0 +1,69 @@
+{
+ "trained_at": "2026-11-15 08:48:15",
+ "dataset": "calibration_dataset.csv",
+ "rows": 15000,
+ "types": [
+  "digital_scale",
+  "flow_meter",
+  "micrometer",
+  "multimeter",
+  "ph_meter",
+  "pressure_gauge",
+  "strain_gauge",
+  "thermometer",
+  "torque_wrench",
+  "vernier_caliper"
+ ],
+ "holdout_rows": 3000,
+ "mae_error_ratio": 0.2017,
+ "baseline_mae": 0.2697,
+ "r2": 0.3993,
+ "auc_out_of_tolerance": 0.8429,
+ "brier": 0.1002,
+ "interval_80_coverage": 0.748,
+ "out_of_tolerance_rate": 0.1507,
+ "per_type": {
+  "digital_scale": {
+   "mae": 0.3029,
+   "samples": 300
+  },
+  "flow_meter": {
+   "mae": 0.1946,
+   "samples": 300
+  },
+  "micrometer": {
+   "mae": 0.1735,
+   "samples": 300
+  },
+  "multimeter": {
+   "mae": 0.1546,
+   "samples": 300
+  },
+  "ph_meter": {
+   "mae": 0.2724,
+   "samples": 300
+  },
+  "pressure_gauge": {
+   "mae": 0.1688,
+   "samples": 300
+  },
+  "strain_gauge": {
+   "mae": 0.2274,
+   "samples": 300
+  },
+  "thermometer": {
+   "mae": 0.1474,
+   "samples": 300
+  },
+  "torque_wrench": {
+   "mae": 0.1782,
+   "samples": 300
+  },
+  "vernier_caliper": {
+   "mae": 0.1974,
+   "samples": 300
+  }
+ },
+ "note": "Metrics are measured on a held-out 20% split. Error is expressed as a fraction of MPE (0.10 = 10% of tolerance). Dataset is synthetic unless replaced with real lab history.",
+ "train_seconds": 6.8
+}

@@ -40,8 +40,11 @@ if ($Setup) {
 }
 
 $envFile = "$root\backend\.env"
-if (-not (Test-Path $envFile) -or (Select-String -Path $envFile -Pattern 'YOUR-PASSWORD|xxxxxxxxxxxx' -Quiet)) {
-  throw "Edit backend\.env and paste your Supabase connection string into DATABASE_URL, then run this script again (see SUPABASE_SETUP.md)."
+# Only the DATABASE_URL line matters (comments in the file may mention the placeholder text).
+$dbLine = $null
+if (Test-Path $envFile) { $dbLine = Select-String -Path $envFile -Pattern '^\s*DATABASE_URL\s*=' | Select-Object -First 1 }
+if (-not $dbLine -or $dbLine.Line -match 'YOUR-PASSWORD|xxxxxxxxxxxx|your-region') {
+  throw "Edit backend\.env and paste your Supabase connection string into the DATABASE_URL line, then run this script again (see SUPABASE_SETUP.md)."
 }
 Step 'Checking the database connection'
 Push-Location "$root\backend"; Run 'npm' @('run', 'db:check'); Pop-Location
