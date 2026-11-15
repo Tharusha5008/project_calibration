@@ -3,7 +3,6 @@ Run:  python3 app.py   (default port 5001)
 """
 import os, threading
 import joblib
-import sklearn
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request
@@ -18,26 +17,9 @@ _bundle = None
 
 
 def load_bundle():
-    """Load the saved model. If the file is missing or was saved by an incompatible scikit-learn
-    version, retrain from the bundled dataset instead of crashing."""
     global _bundle
-    try:
-        if os.path.exists(MODEL_PATH):
-            b = joblib.load(MODEL_PATH)
-            if b.get("sklearn_version") == sklearn.__version__:
-                _bundle = b
-                return _bundle
-            print(f"[ai] saved model was built with scikit-learn {b.get('sklearn_version')}, "
-                  f"this is {sklearn.__version__}; retraining...", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[ai] saved model could not be loaded ({e.__class__.__name__}: {e}); retraining...", flush=True)
-    if os.path.exists(os.path.join(HERE, "data", "calibration_dataset.csv")):
-        try:
-            trainer.train()
-            _bundle = joblib.load(MODEL_PATH)
-            print("[ai] model retrained from data/calibration_dataset.csv", flush=True)
-        except Exception as e:  # noqa: BLE001
-            print(f"[ai] automatic training failed: {e}", flush=True)
+    if os.path.exists(MODEL_PATH):
+        _bundle = joblib.load(MODEL_PATH)
     return _bundle
 
 

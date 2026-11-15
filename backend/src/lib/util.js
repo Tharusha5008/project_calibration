@@ -15,19 +15,18 @@ const notFound = (msg = 'Not found') => new HttpError(404, msg);
 const forbidden = (msg = 'Not allowed') => new HttpError(403, msg);
 
 // Tracking token like CAL-7K3QX9 (no 0/O/1/I to avoid misreading)
-async function newToken() {
+function newToken() {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   for (;;) {
     const t = 'CAL-' + Array.from(crypto.randomBytes(6)).map((b) => alphabet[b % alphabet.length]).join('');
-    if (!(await db.get('SELECT 1 AS x FROM requests WHERE token=?', t))) return t;
+    if (!db.prepare('SELECT 1 FROM requests WHERE token=?').get(t)) return t;
   }
 }
 
-// Certificate numbers come from the highest existing number this year, so they never collide.
-async function newCertNumber(runner = db) {
+function newCertNumber() {
   const y = new Date().getFullYear();
-  const row = await runner.get("SELECT COALESCE(MAX(CAST(SUBSTRING(number FROM '[0-9]+$') AS INTEGER)), 0) AS n FROM certificates WHERE number LIKE ?", `CERT-${y}-%`);
-  return `CERT-${y}-${String(row.n + 1).padStart(5, '0')}`;
+  const n = db.prepare("SELECT COUNT(*) c FROM certificates WHERE number LIKE ?").get(`CERT-${y}-%`).c + 1;
+  return `CERT-${y}-${String(n).padStart(5, '0')}`;
 }
 
 function equipmentRow(r) {
@@ -45,9 +44,9 @@ function validatePoints(points) {
   });
 }
 
-async function logEvent(requestId, kind, title, detail, actorId, direction = null, runner = db) {
-  await runner.run('INSERT INTO request_events (request_id,kind,title,detail,actor_id,direction) VALUES (?,?,?,?,?,?)',
-    requestId, kind, title, detail || null, actorId || null, direction);
+function logEvent(requestId, kind, title, detail, actorId, direction = null) {
+  db.prepare('INSERT INTO request_events (request_id,kind,title,detail,actor_id,direction) VALUES (?,?,?,?,?,?)')
+    .run(requestId, kind, title, detail || null, actorId || null, direction);
 }
 
 // Verdict from an exact calculation. error_ratio is a FRACTION of MPE (1.0 == at the limit).

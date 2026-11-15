@@ -13,7 +13,6 @@ import json, os, sys, time
 import numpy as np
 import pandas as pd
 import joblib
-import sklearn
 from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
 from sklearn.metrics import mean_absolute_error, r2_score, roc_auc_score, brier_score_loss
 from sklearn.model_selection import train_test_split
@@ -95,7 +94,7 @@ def train(csv_path=None):
               "(0.10 = 10% of tolerance). Dataset is synthetic unless replaced with real lab history."),
         train_seconds=round(time.time() - t0, 1),
     )
-    joblib.dump(dict(mid=mid, lo=lo, hi=hi, clf=clf, type_codes=type_codes, sklearn_version=sklearn.__version__,
+    joblib.dump(dict(mid=mid, lo=lo, hi=hi, clf=clf, type_codes=type_codes,
                      ranges={t: (float(df[df.equipment_type == t]["range_min"].iloc[0]),
                                  float(df[df.equipment_type == t]["range_max"].iloc[0])) for t in types},
                      feature_bounds={c: (float(X[c].min()), float(X[c].max())) for c in NUM},

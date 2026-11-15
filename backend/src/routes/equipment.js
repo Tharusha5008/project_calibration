@@ -5,14 +5,14 @@ const { wrap, bad, notFound, equipmentRow, validatePoints } = require('../lib/ut
 
 router.use(authenticate);
 
-router.get('/', wrap(async (req, res) => {
+router.get('/', (req, res) => {
   const all = req.user.role === 'admin' && req.query.all === 'true';
-  const rows = await db.all(`SELECT * FROM equipment_types ${all ? '' : 'WHERE active=1'} ORDER BY name`);
+  const rows = db.prepare(`SELECT * FROM equipment_types ${all ? '' : 'WHERE active=1'} ORDER BY name`).all();
   res.json({ equipment: rows.map(equipmentRow) });
-}));
+});
 
-router.get('/:id', wrap(async (req, res) => {
-  const r = await db.get('SELECT * FROM equipment_types WHERE id=?', req.params.id);
+router.get('/:id', wrap((req, res) => {
+  const r = db.prepare('SELECT * FROM equipment_types WHERE id=?').get(req.params.id);
   if (!r) throw notFound('Equipment type not found');
   res.json({ equipment: equipmentRow(r) });
 }));
@@ -35,35 +35,35 @@ function readBody(b, existing = {}) {
     model3d: b.model3d ?? existing.model3d ?? 'generic' };
 }
 
-router.post('/', requireRole('admin'), wrap(async (req, res) => {
+router.post('/', requireRole('admin'), wrap((req, res) => {
   const e = readBody(req.body || {});
-  if (await db.get('SELECT 1 AS x FROM equipment_types WHERE key=?', e.key)) throw bad('An equipment type with this name already exists');
-  const id = await db.insert(`INSERT INTO equipment_types (key,name,unit,decimals,range_min,range_max,standard,reference_tool,read_label,steps,points,model3d)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, e.key, e.name, e.unit, e.decimals, e.rmin, e.rmax, e.standard, e.reference_tool, e.read_label,
+  if (db.prepare('SELECT 1 FROM equipment_types WHERE key=?').get(e.key)) throw bad('An equipment type with this name already exists');
+  const info = db.prepare(`INSERT INTO equipment_types (key,name,unit,decimals,range_min,range_max,standard,reference_tool,read_label,steps,points,model3d)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(e.key, e.name, e.unit, e.decimals, e.rmin, e.rmax, e.standard, e.reference_tool, e.read_label,
     JSON.stringify(e.steps), JSON.stringify(e.points), e.model3d);
-  res.status(201).json({ equipment: equipmentRow(await db.get('SELECT * FROM equipment_types WHERE id=?', id)) });
+  res.status(201).json({ equipment: equipmentRow(db.prepare('SELECT * FROM equipment_types WHERE id=?').get(info.lastInsertRowid)) });
 }));
 
-router.put('/:id', requireRole('admin'), wrap(async (req, res) => {
-  const cur = equipmentRow(await db.get('SELECT * FROM equipment_types WHERE id=?', req.params.id));
+router.put('/:id', requireRole('admin'), wrap((req, res) => {
+  const cur = equipmentRow(db.prepare('SELECT * FROM equipment_types WHERE id=?').get(req.params.id));
   if (!cur) throw notFound('Equipment type not found');
   const e = readBody({ ...req.body, key: cur.key }, cur); // key is immutable (AI model + history reference it)
   const active = req.body.active === undefined ? cur.active : !!req.body.active;
-  await db.run(`UPDATE equipment_types SET name=?,unit=?,decimals=?,range_min=?,range_max=?,standard=?,reference_tool=?,read_label=?,steps=?,points=?,model3d=?,active=? WHERE id=?`,
-    e.name, e.unit, e.decimals, e.rmin, e.rmax, e.standard, e.reference_tool, e.read_label, JSON.stringify(e.steps), JSON.stringify(e.points), e.model3d, active ? 1 : 0, cur.id);
-  res.json({ equipment: equipmentRow(await db.get('SELECT * FROM equipment_types WHERE id=?', cur.id)) });
+  db.prepare(`UPDATE equipment_types SET name=?,unit=?,decimals=?,range_min=?,range_max=?,standard=?,reference_tool=?,read_label=?,steps=?,points=?,model3d=?,active=? WHERE id=?`)
+    .run(e.name, e.unit, e.decimals, e.rmin, e.rmax, e.standard, e.reference_tool, e.read_label, JSON.stringify(e.steps), JSON.stringify(e.points), e.model3d, active ? 1 : 0, cur.id);
+  res.json({ equipment: equipmentRow(db.prepare('SELECT * FROM equipment_types WHERE id=?').get(cur.id)) });
 }));
 
 // Hard delete when never used; otherwise retire (active=0) so history and certificates stay intact.
-router.delete('/:id', requireRole('admin'), wrap(async (req, res) => {
+router.delete('/:id', requireRole('admin'), wrap((req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || !(await db.get('SELECT 1 AS x FROM equipment_types WHERE id=?', id))) throw notFound('Equipment type not found');
-  const used = (await db.get('SELECT (SELECT COUNT(*) FROM checks WHERE equipment_type_id=?)+(SELECT COUNT(*) FROM requests WHERE equipment_type_id=?) AS c', id, id)).c;
+  if (!db.prepare('SELECT 1 FROM equipment_types WHERE id=?').get(id)) throw notFound('Equipment type not found');
+  const used = db.prepare('SELECT (SELECT COUNT(*) FROM checks WHERE equipment_type_id=@i)+(SELECT COUNT(*) FROM requests WHERE equipment_type_id=@i) c').get({ i: id }).c;
   if (used > 0) {
-    await db.run('UPDATE equipment_types SET active=0 WHERE id=?', id);
+    db.prepare('UPDATE equipment_types SET active=0 WHERE id=?').run(id);
     return res.json({ message: 'Equipment has history, so it was retired (hidden from new checks) instead of deleted.', retired: true });
   }
-  await db.run('DELETE FROM equipment_types WHERE id=?', id);
+  db.prepare('DELETE FROM equipment_types WHERE id=?').run(id);
   res.json({ message: 'Equipment deleted', retired: false });
 }));
 

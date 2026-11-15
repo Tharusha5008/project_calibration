@@ -22,7 +22,7 @@ function shape(c) {
 // POST /api/checks  - exact verdict from the real reading + AI drift-risk as a secondary signal.
 router.post('/', wrap(async (req, res) => {
   const b = req.body || {};
-  const eq = equipmentRow(await db.get('SELECT * FROM equipment_types WHERE id=? AND active=1', b.equipmentTypeId));
+  const eq = equipmentRow(db.prepare('SELECT * FROM equipment_types WHERE id=? AND active=1').get(b.equipmentTypeId));
   if (!eq) throw notFound('Equipment type not found');
   const serial = String(b.serialNo || '').trim();
   if (!serial) throw bad('Enter the instrument serial number or asset tag (needed for traceability)');
@@ -47,8 +47,8 @@ router.post('/', wrap(async (req, res) => {
   const verdict = verdictFor(ratio);
 
   // Context for the AI: use real history for this serial if we have it, otherwise the user's input, otherwise defaults.
-  const last = await db.get(`SELECT c.result, c.issued_at FROM certificates c JOIN requests r ON r.id=c.request_id
-    WHERE r.serial_no=? AND r.equipment_type_id=? AND c.approval_status='approved' ORDER BY c.issued_at DESC LIMIT 1`, serial, eq.id);
+  const last = db.prepare(`SELECT c.result, c.issued_at FROM certificates c JOIN requests r ON r.id=c.request_id
+    WHERE r.serial_no=? AND r.equipment_type_id=? AND c.approval_status='approved' ORDER BY c.issued_at DESC LIMIT 1`).get(serial, eq.id);
   const assumed = [];
   const pick = (key, given, fromHistory) => {
     if (given !== undefined) return given;
@@ -56,7 +56,7 @@ router.post('/', wrap(async (req, res) => {
     assumed.push(key);
     return DEFAULTS[key];
   };
-  const histDays = last ? Math.max(0, Math.floor((Date.now() - new Date(last.issued_at).getTime()) / 864e5)) : undefined;
+  const histDays = last ? Math.max(0, Math.floor((Date.now() - new Date(last.issued_at + 'Z').getTime()) / 864e5)) : undefined;
   const prevResult = ['pass', 'adjusted', 'fail'].includes(b.previousResult) ? b.previousResult : undefined;
   const ctx = {
     ageMonths: pick('ageMonths', num(b.ageMonths, 'Instrument age', 0, 600)),
@@ -70,28 +70,28 @@ router.post('/', wrap(async (req, res) => {
   const aiRes = await ai.predict({ equipmentKey: eq.key, pointValue: point.value, ...ctx, observedErrorRatio: ratio });
   const suspicious = ratio > 10 || aiRes.consistency === 'implausible';
 
-  const newId = await db.insert(`INSERT INTO checks (user_id,equipment_type_id,serial_no,point_index,nominal_value,measured_value,mpe,error,error_ratio,verdict,suspicious,context,ai)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, req.user.id, eq.id, serial, idx, point.value, measured, point.mpe, round(error, 6), round(ratio, 4),
+  const info = db.prepare(`INSERT INTO checks (user_id,equipment_type_id,serial_no,point_index,nominal_value,measured_value,mpe,error,error_ratio,verdict,suspicious,context,ai)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(req.user.id, eq.id, serial, idx, point.value, measured, point.mpe, round(error, 6), round(ratio, 4),
     verdict, suspicious ? 1 : 0, JSON.stringify({ ...ctx, assumed }), aiRes.supported ? JSON.stringify(aiRes) : null);
 
-  const check = shape(await db.get('SELECT * FROM checks WHERE id=?', newId));
+  const check = shape(db.prepare('SELECT * FROM checks WHERE id=?').get(info.lastInsertRowid));
   res.status(201).json({ check: { ...check, error_pct_of_tolerance: round(ratio * 100, 1), margin_pct: round((1 - ratio) * 100, 1) },
     ai: aiRes, equipment: { id: eq.id, name: eq.name, unit: eq.unit } });
 }));
 
-router.get('/', wrap(async (req, res) => {
+router.get('/', (req, res) => {
   const where = [], p = [];
   if (req.user.role === 'user') { where.push('c.user_id=?'); p.push(req.user.id); }
   if (req.query.equipmentTypeId) { where.push('c.equipment_type_id=?'); p.push(req.query.equipmentTypeId); }
-  const rows = await db.all(`SELECT c.*, e.name AS equipment_name, e.unit, u.full_name AS user_name,
+  const rows = db.prepare(`SELECT c.*, e.name AS equipment_name, e.unit, u.full_name AS user_name,
       (SELECT token FROM requests r WHERE r.check_id=c.id LIMIT 1) AS token
     FROM checks c JOIN equipment_types e ON e.id=c.equipment_type_id JOIN users u ON u.id=c.user_id
-    ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.created_at DESC LIMIT 200`, ...p);
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.created_at DESC LIMIT 200`).all(...p);
   res.json({ checks: rows.map((r) => ({ ...shape(r), error_pct_of_tolerance: round(r.error_ratio * 100, 1) })) });
-}));
+});
 
-router.get('/:id', wrap(async (req, res) => {
-  const c = await db.get('SELECT c.*, e.name AS equipment_name, e.unit FROM checks c JOIN equipment_types e ON e.id=c.equipment_type_id WHERE c.id=?', req.params.id);
+router.get('/:id', wrap((req, res) => {
+  const c = db.prepare('SELECT c.*, e.name AS equipment_name, e.unit FROM checks c JOIN equipment_types e ON e.id=c.equipment_type_id WHERE c.id=?').get(req.params.id);
   if (!c) throw notFound('Check not found');
   if (req.user.role === 'user' && c.user_id !== req.user.id) throw forbidden();
   res.json({ check: { ...shape(c), error_pct_of_tolerance: round(c.error_ratio * 100, 1) } });

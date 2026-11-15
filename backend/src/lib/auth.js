@@ -14,18 +14,19 @@ if (!secret || secret.startsWith('replace-with')) {
 
 const sign = (u) => jwt.sign({ id: u.id, role: u.role }, secret, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
 
-async function authenticate(req, res, next) {
+function authenticate(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return res.status(401).json({ message: 'Sign in required' });
-  let p;
-  try { p = jwt.verify(token, secret); } catch { return res.status(401).json({ message: 'Session expired - sign in again' }); }
   try {
-    const user = await db.get('SELECT id,full_name,email,role,is_active FROM users WHERE id=?', p.id);
+    const p = jwt.verify(token, secret);
+    const user = db.prepare('SELECT id,full_name,email,role,is_active FROM users WHERE id=?').get(p.id);
     if (!user || !user.is_active) return res.status(401).json({ message: 'Account disabled or not found' });
     req.user = user;
     next();
-  } catch (e) { next(e); }   // a database problem is a 500, not a "sign in again"
+  } catch {
+    res.status(401).json({ message: 'Session expired - sign in again' });
+  }
 }
 
 const requireRole = (...roles) => (req, res, next) =>

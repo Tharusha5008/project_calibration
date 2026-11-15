@@ -20,49 +20,49 @@ function visible(req, c) {
 }
 const shape = (c) => ({ ...c, data: J(c.data, []), environment: J(c.environment, {}) });
 
-router.get('/', wrap(async (req, res) => {
+router.get('/', (req, res) => {
   const where = [], p = [];
   if (req.user.role === 'technician') { where.push('c.technician_id=?'); p.push(req.user.id); }
   if (req.user.role === 'user') { where.push('r.user_id=?', "c.approval_status='approved'"); p.push(req.user.id); }
   if (req.query.approval) { where.push('c.approval_status=?'); p.push(req.query.approval); }
-  const rows = await db.all(`${SQL} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.issued_at DESC LIMIT 300`, ...p);
+  const rows = db.prepare(`${SQL} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.issued_at DESC LIMIT 300`).all(...p);
   res.json({ certificates: rows.map(shape) });
-}));
+});
 
-router.get('/:id', wrap(async (req, res) => {
-  const c = await db.get(`${SQL} WHERE c.id=?`, req.params.id);
+router.get('/:id', wrap((req, res) => {
+  const c = db.prepare(`${SQL} WHERE c.id=?`).get(req.params.id);
   if (!c || !visible(req, c)) throw notFound('Certificate not found');
   res.json({ certificate: shape(c) });
 }));
 
-router.post('/:id/approve', requireRole('admin'), wrap(async (req, res) => {
-  const c = await db.get(`${SQL} WHERE c.id=?`, req.params.id);
+router.post('/:id/approve', requireRole('admin'), wrap((req, res) => {
+  const c = db.prepare(`${SQL} WHERE c.id=?`).get(req.params.id);
   if (!c) throw notFound('Certificate not found');
   if (c.approval_status !== 'pending') throw bad('This certificate has already been reviewed');
-  await db.tx(async (t) => {
-    await t.run("UPDATE certificates SET approval_status='approved', approved_by=?, approved_at=now() WHERE id=?", req.user.id, c.id);
-    await t.run("UPDATE requests SET status='certificate_approved', updated_at=now() WHERE id=?", c.rid);
-    await logEvent(c.rid, 'status', label('certificate_approved'), `Certificate ${c.number} approved. Result: ${c.result}.`, req.user.id, null, t);
-  });
+  db.transaction(() => {
+    db.prepare("UPDATE certificates SET approval_status='approved', approved_by=?, approved_at=datetime('now') WHERE id=?").run(req.user.id, c.id);
+    db.prepare("UPDATE requests SET status='certificate_approved', updated_at=datetime('now') WHERE id=?").run(c.rid);
+    logEvent(c.rid, 'status', label('certificate_approved'), `Certificate ${c.number} approved. Result: ${c.result}.`, req.user.id);
+  })();
   res.json({ message: 'Certificate approved' });
 }));
 
-router.post('/:id/reject', requireRole('admin'), wrap(async (req, res) => {
+router.post('/:id/reject', requireRole('admin'), wrap((req, res) => {
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 5) throw bad('Give the technician a reason (at least a few words)');
-  const c = await db.get(`${SQL} WHERE c.id=?`, req.params.id);
+  const c = db.prepare(`${SQL} WHERE c.id=?`).get(req.params.id);
   if (!c) throw notFound('Certificate not found');
   if (c.approval_status !== 'pending') throw bad('This certificate has already been reviewed');
-  await db.tx(async (t) => {
-    await t.run("UPDATE certificates SET approval_status='rejected', approved_by=?, approved_at=now(), rejection_reason=? WHERE id=?", req.user.id, reason, c.id);
-    await t.run("UPDATE requests SET status='in_calibration', updated_at=now() WHERE id=?", c.rid);
-    await logEvent(c.rid, 'status', 'Certificate rejected - rework needed', reason, req.user.id, null, t);
-  });
+  db.transaction(() => {
+    db.prepare("UPDATE certificates SET approval_status='rejected', approved_by=?, approved_at=datetime('now'), rejection_reason=? WHERE id=?").run(req.user.id, reason, c.id);
+    db.prepare("UPDATE requests SET status='in_calibration', updated_at=datetime('now') WHERE id=?").run(c.rid);
+    logEvent(c.rid, 'status', 'Certificate rejected - rework needed', reason, req.user.id);
+  })();
   res.json({ message: 'Certificate sent back to the technician' });
 }));
 
-router.get('/:id/pdf', wrap(async (req, res) => {
-  const c = await db.get(`${SQL} WHERE c.id=?`, req.params.id);
+router.get('/:id/pdf', wrap((req, res) => {
+  const c = db.prepare(`${SQL} WHERE c.id=?`).get(req.params.id);
   if (!c || !visible(req, c)) throw notFound('Certificate not found');
   if (c.approval_status !== 'approved' && req.user.role !== 'admin') throw forbidden('Only approved certificates can be downloaded');
   const watermark = c.approval_status !== 'approved' ? 'DRAFT - NOT APPROVED' : null;

@@ -7,10 +7,6 @@ if [ "$1" = "--setup" ]; then
   (cd backend && npm install && [ -f .env ] || cp .env.example .env)
   (cd frontend && npm install && npm run build)
 fi
-if [ ! -f backend/.env ] || grep -qE "YOUR-PASSWORD|xxxxxxxxxxxx" backend/.env; then
-  echo "Edit backend/.env and paste your Supabase connection string (DATABASE_URL), then run this again."; exit 1
-fi
-(cd backend && npm run db:check)
 trap 'kill 0' EXIT
 (cd ai-service && python3 app.py) &
 (cd backend && node src/server.js) &

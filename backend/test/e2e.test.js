@@ -2,19 +2,18 @@
 // The AI service is optional: tests assert the exact verdict works with or without it.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 
-// Needs a PostgreSQL database. Defaults to a local one; set TEST_DATABASE_URL to use another (e.g. a Supabase
-// project). Everything runs inside a throw-away schema that is dropped at the end, so real data is never touched.
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@localhost:54329/cal';
-process.env.DB_SCHEMA = `test_${Date.now()}`;
+process.env.DB_PATH = path.join(os.tmpdir(), `cal-test-${Date.now()}.db`);
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret-test-secret-test-secret';
 const app = require('../src/server');
-const db = require('../src/db');
 
 let server, base;
-before(async () => { await db.init(); await new Promise((r) => { server = app.listen(0, r); }); base = `http://localhost:${server.address().port}/api`; });
-after(async () => { server.close(); await db.pool.query(`DROP SCHEMA ${process.env.DB_SCHEMA} CASCADE`); await db.pool.end(); });
+before(async () => { await new Promise((r) => { server = app.listen(0, r); }); base = `http://localhost:${server.address().port}/api`; });
+after(() => { server.close(); for (const s of ['', '-wal', '-shm']) fs.rmSync(process.env.DB_PATH + s, { force: true }); });
 
 async function api(method, url, token, body) {
   const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });

@@ -1,5 +1,5 @@
 {
- "trained_at": "2026-11-15 08:48:15",
+ "trained_at": "2026-10-11 05:35:55",
  "dataset": "calibration_dataset.csv",
  "rows": 15000,
  "types": [
@@ -65,5 +65,5 @@
   }
  },
  "note": "Metrics are measured on a held-out 20% split. Error is expressed as a fraction of MPE (0.10 = 10% of tolerance). Dataset is synthetic unless replaced with real lab history.",
- "train_seconds": 6.8
+ "train_seconds": 1.9
 }
