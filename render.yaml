@@ -1,0 +1,40 @@
+# Render Blueprint: creates the web app + the AI service. See HOSTING.md.
+services:
+  - type: web
+    name: calibrateiq
+    runtime: node
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build && cd ../backend && npm install
+    startCommand: cd backend && node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL        # paste your Supabase Session pooler URI in the Render dashboard
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AI_API_KEY          # same value as on the AI service
+        sync: false
+      - key: AI_SERVICE_URL      # URL of the calibrateiq-ai service, e.g. https://calibrateiq-ai.onrender.com
+        sync: false
+      - key: LAB_NAME
+        sync: false
+      - key: LAB_ADDRESS
+        sync: false
+
+  - type: web
+    name: calibrateiq-ai
+    runtime: python
+    plan: free
+    rootDir: ai-service
+    buildCommand: pip install -r requirements.txt && python generate_dataset.py && python train.py
+    startCommand: gunicorn -b 0.0.0.0:$PORT --timeout 120 app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: AI_API_KEY
+        sync: false

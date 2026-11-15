@@ -5,7 +5,7 @@ async function call(path, opts = {}, timeoutMs = 3500) {
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const r = await fetch(AI_URL + path, { ...opts, signal: ctrl.signal,
-      headers: { 'content-type': 'application/json' } });
+      headers: { 'content-type': 'application/json', ...(process.env.AI_API_KEY ? { 'x-api-key': process.env.AI_API_KEY } : {}) } });
     const body = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, body };
   } finally { clearTimeout(t); }
