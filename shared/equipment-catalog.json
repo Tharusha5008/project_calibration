@@ -1,0 +1,462 @@
+[
+ {
+  "key": "vernier_caliper",
+  "name": "Vernier Caliper",
+  "unit": "mm",
+  "decimals": 2,
+  "range": [
+   0,
+   150
+  ],
+  "standard": "ISO 13385-1 / DIN 862",
+  "reference_tool": "Grade 1 steel gauge blocks (ISO 3650)",
+  "points": [
+   {
+    "value": 10,
+    "mpe": 0.02,
+    "label": "10 mm"
+   },
+   {
+    "value": 25,
+    "mpe": 0.02,
+    "label": "25 mm"
+   },
+   {
+    "value": 50,
+    "mpe": 0.02,
+    "label": "50 mm"
+   },
+   {
+    "value": 100,
+    "mpe": 0.02,
+    "label": "100 mm"
+   },
+   {
+    "value": 150,
+    "mpe": 0.03,
+    "label": "150 mm"
+   }
+  ],
+  "read_label": "Jaw scale / digital display reading",
+  "steps": [
+   "Clean the measuring faces and the gauge block with a lint-free cloth.",
+   "Close the jaws gently on the reference gauge block (do not force).",
+   "Lock the slider screw, then read the scale at the highlighted marker.",
+   "Enter the displayed length below."
+  ],
+  "model3d": "vernier_caliper"
+ },
+ {
+  "key": "micrometer",
+  "name": "Outside Micrometer",
+  "unit": "mm",
+  "decimals": 3,
+  "range": [
+   0,
+   25
+  ],
+  "standard": "ISO 3611 / DIN 863-1",
+  "reference_tool": "Grade 0 gauge blocks (ISO 3650)",
+  "points": [
+   {
+    "value": 5,
+    "mpe": 0.004,
+    "label": "5 mm"
+   },
+   {
+    "value": 10,
+    "mpe": 0.004,
+    "label": "10 mm"
+   },
+   {
+    "value": 15,
+    "mpe": 0.004,
+    "label": "15 mm"
+   },
+   {
+    "value": 20,
+    "mpe": 0.004,
+    "label": "20 mm"
+   },
+   {
+    "value": 25,
+    "mpe": 0.004,
+    "label": "25 mm"
+   }
+  ],
+  "read_label": "Barrel + thimble reading",
+  "steps": [
+   "Wipe the anvil and spindle faces; check zero at 0 mm.",
+   "Place the gauge block between anvil and spindle.",
+   "Turn the ratchet until it clicks 3 times - never turn the thimble directly.",
+   "Read the barrel and thimble at the highlighted marker and enter the value."
+  ],
+  "model3d": "micrometer"
+ },
+ {
+  "key": "pressure_gauge",
+  "name": "Pressure Gauge (0-10 bar)",
+  "unit": "bar",
+  "decimals": 2,
+  "range": [
+   0,
+   10
+  ],
+  "standard": "EN 837-1 (Class 1.0)",
+  "reference_tool": "Deadweight tester / digital pressure calibrator",
+  "points": [
+   {
+    "value": 0,
+    "mpe": 0.1,
+    "label": "0 bar"
+   },
+   {
+    "value": 2.5,
+    "mpe": 0.1,
+    "label": "2.5 bar"
+   },
+   {
+    "value": 5,
+    "mpe": 0.1,
+    "label": "5 bar"
+   },
+   {
+    "value": 7.5,
+    "mpe": 0.1,
+    "label": "7.5 bar"
+   },
+   {
+    "value": 10,
+    "mpe": 0.1,
+    "label": "10 bar"
+   }
+  ],
+  "read_label": "Needle position on the dial",
+  "steps": [
+   "Connect the gauge to the pressure source with the correct fitting.",
+   "Raise pressure slowly to the target point and tap the case lightly.",
+   "Wait 30 s for the needle to settle.",
+   "Read the needle against the dial scale at the highlighted marker."
+  ],
+  "model3d": "pressure_gauge"
+ },
+ {
+  "key": "thermometer",
+  "name": "Digital Thermometer",
+  "unit": "C",
+  "decimals": 1,
+  "range": [
+   0,
+   100
+  ],
+  "standard": "IEC 60751 / ASTM E1",
+  "reference_tool": "Dry-block calibrator with reference PRT",
+  "points": [
+   {
+    "value": 0,
+    "mpe": 0.5,
+    "label": "0 C"
+   },
+   {
+    "value": 25,
+    "mpe": 0.5,
+    "label": "25 C"
+   },
+   {
+    "value": 50,
+    "mpe": 0.5,
+    "label": "50 C"
+   },
+   {
+    "value": 75,
+    "mpe": 0.5,
+    "label": "75 C"
+   },
+   {
+    "value": 100,
+    "mpe": 0.5,
+    "label": "100 C"
+   }
+  ],
+  "read_label": "Stabilised temperature display",
+  "steps": [
+   "Insert the probe fully into the reference bath or dry-block well.",
+   "Allow at least 3 minutes for thermal stabilisation.",
+   "Read the value only when it changes less than 0.1 C per minute.",
+   "Enter the displayed temperature."
+  ],
+  "model3d": "thermometer"
+ },
+ {
+  "key": "digital_scale",
+  "name": "Digital Weighing Scale",
+  "unit": "g",
+  "decimals": 1,
+  "range": [
+   0,
+   5000
+  ],
+  "standard": "OIML R76-1 (Class II)",
+  "reference_tool": "Class F1 calibration weights (OIML R111)",
+  "points": [
+   {
+    "value": 100,
+    "mpe": 0.1,
+    "label": "100 g"
+   },
+   {
+    "value": 500,
+    "mpe": 0.1,
+    "label": "500 g"
+   },
+   {
+    "value": 1000,
+    "mpe": 0.2,
+    "label": "1000 g"
+   },
+   {
+    "value": 2000,
+    "mpe": 0.2,
+    "label": "2000 g"
+   },
+   {
+    "value": 5000,
+    "mpe": 0.3,
+    "label": "5000 g"
+   }
+  ],
+  "read_label": "Weight shown on the display",
+  "steps": [
+   "Level the scale and warm it up for 15 minutes; tare with an empty pan.",
+   "Place the calibration weight in the centre of the pan using forceps.",
+   "Wait for the stable indicator.",
+   "Enter the displayed mass."
+  ],
+  "model3d": "digital_scale"
+ },
+ {
+  "key": "torque_wrench",
+  "name": "Torque Wrench",
+  "unit": "N.m",
+  "decimals": 1,
+  "range": [
+   20,
+   100
+  ],
+  "standard": "ISO 6789-1:2017",
+  "reference_tool": "Torque transducer / torque tester",
+  "points": [
+   {
+    "value": 20,
+    "mpe": 0.8,
+    "label": "20 N.m"
+   },
+   {
+    "value": 40,
+    "mpe": 1.6,
+    "label": "40 N.m"
+   },
+   {
+    "value": 60,
+    "mpe": 2.4,
+    "label": "60 N.m"
+   },
+   {
+    "value": 80,
+    "mpe": 3.2,
+    "label": "80 N.m"
+   },
+   {
+    "value": 100,
+    "mpe": 4.0,
+    "label": "100 N.m"
+   }
+  ],
+  "read_label": "Torque at the click / display",
+  "steps": [
+   "Mount the wrench square drive on the torque tester.",
+   "Pull smoothly and steadily at 90 degrees to the handle.",
+   "Stop at the click (or when the display peaks).",
+   "Enter the peak torque shown by the tester."
+  ],
+  "model3d": "torque_wrench"
+ },
+ {
+  "key": "multimeter",
+  "name": "Digital Multimeter (DC V)",
+  "unit": "V",
+  "decimals": 3,
+  "range": [
+   0,
+   50
+  ],
+  "standard": "IEC 61010-1 / manufacturer spec",
+  "reference_tool": "Multi-product calibrator (5522A class)",
+  "points": [
+   {
+    "value": 1,
+    "mpe": 0.007,
+    "label": "1 V"
+   },
+   {
+    "value": 5,
+    "mpe": 0.027,
+    "label": "5 V"
+   },
+   {
+    "value": 10,
+    "mpe": 0.052,
+    "label": "10 V"
+   },
+   {
+    "value": 20,
+    "mpe": 0.102,
+    "label": "20 V"
+   },
+   {
+    "value": 50,
+    "mpe": 0.252,
+    "label": "50 V"
+   }
+  ],
+  "read_label": "Main LCD display",
+  "steps": [
+   "Select the DC voltage range closest above the test point.",
+   "Connect the test leads to the calibrator output (observe polarity).",
+   "Apply the reference voltage and wait for the reading to settle.",
+   "Enter the value on the multimeter display."
+  ],
+  "model3d": "multimeter"
+ },
+ {
+  "key": "ph_meter",
+  "name": "pH Meter",
+  "unit": "pH",
+  "decimals": 2,
+  "range": [
+   2,
+   12
+  ],
+  "standard": "IUPAC / NIST-traceable buffers",
+  "reference_tool": "Certified buffer solutions at 25 C",
+  "points": [
+   {
+    "value": 4.01,
+    "mpe": 0.05,
+    "label": "4.01 pH"
+   },
+   {
+    "value": 7.0,
+    "mpe": 0.05,
+    "label": "7 pH"
+   },
+   {
+    "value": 10.01,
+    "mpe": 0.05,
+    "label": "10.01 pH"
+   }
+  ],
+  "read_label": "pH display",
+  "steps": [
+   "Rinse the electrode with deionised water and blot dry.",
+   "Immerse it in the certified buffer at 25 C.",
+   "Wait until the stable icon appears.",
+   "Enter the pH value shown."
+  ],
+  "model3d": "ph_meter"
+ },
+ {
+  "key": "flow_meter",
+  "name": "Flow Meter",
+  "unit": "L/min",
+  "decimals": 2,
+  "range": [
+   0,
+   60
+  ],
+  "standard": "ISO 4185 / OIML R117",
+  "reference_tool": "Gravimetric flow rig / master meter",
+  "points": [
+   {
+    "value": 5,
+    "mpe": 0.1,
+    "label": "5 L/min"
+   },
+   {
+    "value": 10,
+    "mpe": 0.2,
+    "label": "10 L/min"
+   },
+   {
+    "value": 20,
+    "mpe": 0.4,
+    "label": "20 L/min"
+   },
+   {
+    "value": 40,
+    "mpe": 0.8,
+    "label": "40 L/min"
+   },
+   {
+    "value": 60,
+    "mpe": 1.2,
+    "label": "60 L/min"
+   }
+  ],
+  "read_label": "Instantaneous flow-rate display",
+  "steps": [
+   "Run the flow rig until the line is fully primed (no air).",
+   "Set the reference flow and wait 60 s for it to stabilise.",
+   "Read the flow rate on the meter display.",
+   "Enter the displayed flow rate."
+  ],
+  "model3d": "flow_meter"
+ },
+ {
+  "key": "strain_gauge",
+  "name": "Strain Gauge Bridge",
+  "unit": "ue",
+  "decimals": 1,
+  "range": [
+   0,
+   2000
+  ],
+  "standard": "ASTM E251 / OIML R60",
+  "reference_tool": "Shunt-calibration resistor + strain simulator",
+  "points": [
+   {
+    "value": 250,
+    "mpe": 4.5,
+    "label": "250 ue"
+   },
+   {
+    "value": 500,
+    "mpe": 7.0,
+    "label": "500 ue"
+   },
+   {
+    "value": 1000,
+    "mpe": 12.0,
+    "label": "1000 ue"
+   },
+   {
+    "value": 1500,
+    "mpe": 17.0,
+    "label": "1500 ue"
+   },
+   {
+    "value": 2000,
+    "mpe": 22.0,
+    "label": "2000 ue"
+   }
+  ],
+  "read_label": "Strain indicator reading (microstrain)",
+  "steps": [
+   "Balance (zero) the Wheatstone bridge with no load applied.",
+   "Apply the reference strain with the simulator or shunt resistor.",
+   "Allow the amplifier to settle for 20 seconds.",
+   "Enter the indicated microstrain (ue)."
+  ],
+  "model3d": "strain_gauge"
+ }
+]
