@@ -12,17 +12,17 @@ services:
         value: 20
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL        # paste your Supabase Session pooler URI in the Render dashboard
+      - key: DATABASE_URL        postgresql://postgres.ksuicusydumcyurndxah:Sewminaex21@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres
         sync: false
       - key: JWT_SECRET
         generateValue: true
-      - key: AI_API_KEY          # same value as on the AI service
+      - key: AI_API_KEY          850b095469383c8139925bf0150334b3
         sync: false
-      - key: AI_SERVICE_URL      # URL of the calibrateiq-ai service, e.g. https://calibrateiq-ai.onrender.com
+      - key: AI_SERVICE_URL      https://calibrateiq-ai.onrender.com
         sync: false
-      - key: LAB_NAME
+      - key: LAB_NAME            Precision Calibration Laboratory
         sync: false
-      - key: LAB_ADDRESS
+      - key: LAB_ADDRESS         No. 25, Galle Road, Colombo 03, Sri Lanka
         sync: false
 
   - type: web
@@ -36,5 +36,5 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.3
-      - key: AI_API_KEY
+      - key: AI_API_KEY  850b095469383c8139925bf0150334b3
         sync: false
