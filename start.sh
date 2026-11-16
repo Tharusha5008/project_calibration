@@ -4,11 +4,12 @@ set -e
 cd "$(dirname "$0")"
 if [ "$1" = "--setup" ]; then
   (cd ai-service && pip install -r requirements.txt && python3 generate_dataset.py && python3 train.py)
-  (cd backend && npm install && [ -f .env ] || cp .env.example .env)
+  (cd backend && npm ci && { [ -f .env ] || cp .env.example .env; })
   (cd frontend && npm install && npm run build)
 fi
 trap 'kill 0' EXIT
 (cd ai-service && python3 app.py) &
+(cd backend && npm run db:check)
 (cd backend && node src/server.js) &
-echo "Open http://localhost:4000  (admin@lab.test / Admin@123)"
+echo "Open http://localhost:4000 (use your configured account; see SUPABASE_SETUP.md)"
 wait

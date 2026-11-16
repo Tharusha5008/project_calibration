@@ -1,19 +1,24 @@
-// End-to-end workflow test. Uses a throw-away SQLite file and an in-process server.
+// End-to-end workflow test. Uses isolated PostgreSQL (embedded by default) and an in-process server.
 // The AI service is optional: tests assert the exact verdict works with or without it.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
-
-process.env.DB_PATH = path.join(os.tmpdir(), `cal-test-${Date.now()}.db`);
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret-test-secret-test-secret';
-const app = require('../src/server');
-
-let server, base;
-before(async () => { await new Promise((r) => { server = app.listen(0, r); }); base = `http://localhost:${server.address().port}/api`; });
-after(() => { server.close(); for (const s of ['', '-wal', '-shm']) fs.rmSync(process.env.DB_PATH + s, { force: true }); });
+const { testDatabase } = require('./support/database');
+let server, base, fixture, db;
+before(async () => {
+  fixture = await testDatabase();
+  db = fixture.db;
+  require.cache[require.resolve('../src/db')].exports = db;
+  await db.init({ seedDemo: true });
+  const app = require('../src/server');
+  await new Promise(resolve => { server = app.listen(0, resolve); });
+  base = `http://localhost:${server.address().port}/api`;
+});
+after(async () => {
+  if (server) await new Promise(resolve=>server.close(resolve));
+  if (fixture) await fixture.cleanup();
+});
 
 async function api(method, url, token, body) {
   const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -180,4 +185,110 @@ test('admin manages equipment and accounts', async () => {
   assert.strictEqual((await api('POST', '/auth/login', null, { email: 'nt@lab.test', password: 'Passw0rd!' })).status, 403);
   assert.strictEqual((await api('DELETE', `/users/${r.body.user.id}`, admin)).status, 200);
   assert.strictEqual((await api('GET', '/users', user)).status, 403);
+});
+
+test('PostgreSQL filters, case-insensitive emails, SQL values and rollback', async () => {
+  const admin = await login('ADMIN@LAB.TEST', 'Admin@123');
+  const user = await login('user@lab.test', 'User@123');
+  assert.ok(admin);
+  assert.strictEqual((await api('POST', '/auth/register', null, { fullName: 'Duplicate', email: 'USER@LAB.TEST', password: 'Password1' })).status, 400);
+  for (const url of ['/stats','/checks','/certificates','/messages','/requests?q=VC','/users?q=tech','/equipment?all=true']) {
+    assert.strictEqual((await api('GET', url, admin)).status, 200, url);
+  }
+  const empty = await api('GET', "/users?q=" + encodeURIComponent("' OR 1=1 --"), admin);
+  assert.deepStrictEqual(empty.body.users, []);
+  const count = await db.get('SELECT COUNT(*) c FROM users');
+  assert.strictEqual(typeof count.c, 'number');
+  const eq = (await api('GET', '/equipment', user)).body.equipment.find(e=>e.key==='vernier_caliper');
+  const checked = await api('POST','/checks',user,{equipmentTypeId:eq.id,pointIndex:2,measuredValue:50.05,serialNo:'PG-RACE'});
+  const checkId = checked.body.check.id;
+  const originalRun = db.run;
+  try {
+    db.run = async (sql,...values) => {
+      if (sql.includes('INSERT INTO request_events')) throw new Error('Injected timeline failure');
+      return originalRun(sql,...values);
+    };
+    assert.strictEqual((await api('POST','/requests',user,{checkId})).status,500);
+  } finally { db.run = originalRun; }
+  assert.strictEqual((await db.get('SELECT COUNT(*) c FROM requests WHERE check_id=?',checkId)).c,0);
+  const bookings = await Promise.all([api('POST','/requests',user,{checkId}),api('POST','/requests',user,{checkId})]);
+  assert.deepStrictEqual(bookings.map(r=>r.status).sort(),[201,400]);
+  const id = bookings.find(r=>r.status===201).body.request.id;
+  assert.strictEqual((await api('POST',`/requests/${id}/handover`,user,{method:'physical'})).status,200);
+  const techId = (await db.get("SELECT id FROM users WHERE email='tech@lab.test'")).id;
+  assert.strictEqual((await api('POST',`/requests/${id}/accept`,admin,{technicianId:techId})).status,200);
+  const tech = await login('tech@lab.test','Tech@123');
+  assert.strictEqual((await api('POST',`/requests/${id}/start`,tech)).status,200);
+  const readings = eq.points.map((p,index)=>({index,as_found:p.value,as_left:p.value}));
+  assert.strictEqual((await api('POST',`/requests/${id}/issue-certificate`,tech,{readings})).status,200);
+  const cert = await db.get('SELECT id FROM certificates WHERE request_id=?',id);
+  const reviews = await Promise.all([api('POST',`/certificates/${cert.id}/approve`,admin),api('POST',`/certificates/${cert.id}/reject`,admin,{reason:'Concurrent rejection attempt'})]);
+  assert.deepStrictEqual(reviews.map(r=>r.status).sort(),[200,400]);
+  const state = await db.get('SELECT approval_status FROM certificates WHERE id=?',cert.id);
+  const request = await db.get('SELECT status FROM requests WHERE id=?',id);
+  assert.strictEqual(request.status,state.approval_status==='approved'?'certificate_approved':'in_calibration');
+  const before = await db.get('SELECT COUNT(*) c FROM users');
+  await db.init({ seedDemo: true });
+  assert.strictEqual((await db.get('SELECT COUNT(*) c FROM users')).c,before.c);
+});
+
+test('database outage passes through authentication as a server error', async () => {
+  const user = await login('user@lab.test','User@123');
+  const originalGet = db.get;
+  try {
+    db.get = async ()=> { throw new Error('Injected outage'); };
+    assert.strictEqual((await api('GET','/auth/me',user)).status,500);
+    assert.strictEqual((await api('GET','/health')).status,503);
+  } finally { db.get = originalGet; }
+});
+
+test('SQLite import preserves all columns, relationships and sequence positions', async () => {
+  const { TABLES, importRows } = require('../scripts/import-sqlite');
+  const data = {};
+  for (const table of TABLES) data[table] = await db.all(`SELECT * FROM ${table} ORDER BY id`);
+  const destination = await testDatabase();
+  try {
+    const counts = await importRows(data,destination.db);
+    for (const table of TABLES) {
+      assert.strictEqual(counts[table],data[table].length,table);
+      assert.deepStrictEqual(await destination.db.all(`SELECT * FROM ${table} ORDER BY id`),data[table],table);
+    }
+    await assert.rejects(importRows(data,destination.db),/Destination must be empty/);
+    const next = await destination.db.run('INSERT INTO users(full_name,email,password_hash,role) VALUES (?,?,?,?)','Imported next','import-next@example.test','hash','user');
+    assert.ok(next.lastInsertRowid>Math.max(...data.users.map(u=>u.id)));
+  } finally { await destination.cleanup(); }
+  const failed = await testDatabase();
+  try {
+    const invalid = structuredClone(data);
+    invalid.messages.push({id:99999,author_id:999999,kind:'issue',body:'Invalid FK'});
+    await assert.rejects(importRows(invalid,failed.db));
+    for (const table of TABLES) assert.strictEqual((await failed.db.get(`SELECT COUNT(*) c FROM ${table}`)).c,0,table);
+  } finally { await failed.cleanup(); }
+});
+
+test('initialization preserves existing data and production never seeds demo passwords',async()=> {
+  const isolated = await testDatabase();
+  const original = Object.fromEntries(['NODE_ENV','BOOTSTRAP_ADMIN_EMAIL','BOOTSTRAP_ADMIN_PASSWORD','SEED_DEMO_USERS'].map(key=>[key,process.env[key]]));
+  try {
+    delete process.env.BOOTSTRAP_ADMIN_EMAIL;
+    delete process.env.BOOTSTRAP_ADMIN_PASSWORD;
+    delete process.env.SEED_DEMO_USERS;
+    await isolated.db.init();
+    assert.strictEqual((await isolated.db.get('SELECT COUNT(*) c FROM users')).c,0);
+    assert.strictEqual((await isolated.db.get('SELECT COUNT(*) c FROM equipment_types')).c,10);
+    process.env.NODE_ENV='production';
+    await assert.rejects(isolated.db.init({seedDemo:true}),/disabled in production/);
+    process.env.BOOTSTRAP_ADMIN_EMAIL='bootstrap@example.test';
+    process.env.BOOTSTRAP_ADMIN_PASSWORD='Example-test-only-password';
+    await isolated.db.init();
+    const admin=await isolated.db.get('SELECT * FROM users');
+    assert.strictEqual(admin.role,'admin');
+    process.env.BOOTSTRAP_ADMIN_PASSWORD='A-different-test-password';
+    await isolated.db.init();
+    assert.strictEqual((await isolated.db.get('SELECT * FROM users')).password_hash,admin.password_hash);
+    assert.strictEqual((await isolated.db.get('SELECT COUNT(*) c FROM users')).c,1);
+  } finally {
+    for(const [key,value] of Object.entries(original)) {if(value===undefined)delete process.env[key];else process.env[key]=value;}
+    await isolated.cleanup();
+  }
 });

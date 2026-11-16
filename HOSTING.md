@@ -37,15 +37,14 @@ git push -u origin main
 ## 3. Connect the web app to the AI service
 1. Open the `calibrateiq-ai` service, copy its URL (like `https://calibrateiq-ai-xxxx.onrender.com`).
 2. Open `calibrateiq` -> **Environment** -> set `AI_SERVICE_URL` to that URL (no trailing slash) -> save. It redeploys.
-3. Open the `calibrateiq` URL. Sign in as `admin@lab.test` / `Admin@123`. On the Overview page, the **AI drift model** box should show the model figures.
+3. Open the `calibrateiq` URL. Sign in using your existing account, or set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD for an empty database. On the Overview page, the **AI drift model** box should show the model figures.
 
 Skipping the AI service is fine: leave `AI_SERVICE_URL` empty and checks still give the exact pass/fail.
 
-## 4. Secure it before sharing the link
-1. Sign in as the demo admin -> **Accounts** -> create your real admin account (strong password).
-2. Sign in as the new admin and **disable or delete** the three demo accounts.
-3. In Render, add `SEED_DEMO_USERS=false` to `calibrateiq`. (Do this only AFTER step 1, otherwise you can lock yourself out.)
-4. Reset your Supabase database password, update `DATABASE_URL` in Render, and keep `JWT_SECRET` (auto-generated) private.
+## 4. Configure accounts and rotate credentials
+For a new database, supply a bootstrap admin email and password (12+ characters) in Render and remove the bootstrap variables after first startup. Production does not create demo accounts. Existing accounts, calibration records and certificates are preserved.
+
+Rotate the database password, JWT secret and AI API key exposed in the earlier chat/configuration. Update Render environment values; keep the AI key identical on both services. Removing old values from the repository does not revoke them. See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) before importing SQLite data: the importer requires an empty destination and never overwrites existing rows.
 
 ## 5. Updating the site later
 Commit and push to GitHub; Render redeploys automatically.

@@ -9,7 +9,7 @@ the **certificate** once a technician has calibrated it and an admin has approve
 ./start.sh --setup      # first time: installs everything, generates the sample dataset, trains the model, builds the UI
 ./start.sh              # afterwards
 ```
-Open http://localhost:4000. Needs Node 20+ and Python 3.10+. Optional: `cd backend && npm run seed:demo` (with the app running) loads demo tokens.
+Configure `backend/.env` using [SUPABASE_SETUP.md](SUPABASE_SETUP.md) first. Open http://localhost:4000. Needs Node 20+ and Python 3.10+. Optional: `cd backend && npm run seed:demo` (with the app running) loads demo tokens.
 
 | Role | Login | Password |
 |---|---|---|
@@ -17,7 +17,7 @@ Open http://localhost:4000. Needs Node 20+ and Python 3.10+. Optional: `cd backe
 | Technician | tech@lab.test | Tech@123 |
 | Customer | user@lab.test | User@123 |
 
-**Change these before real use** and set `JWT_SECRET` (the server refuses to start in production without it).
+**These demo accounts require `SEED_DEMO_USERS=true` outside production. For production, use the bootstrap admin variables in SUPABASE_SETUP.md. Change these before real use** and set `JWT_SECRET` (the server refuses to start in production without it).
 
 ## What each role can do
 | | Customer | Technician | Admin |
@@ -52,13 +52,13 @@ Current hold-out metrics: typical miss about 20% of tolerance vs 27% for a "pred
 ```
 shared/equipment-catalog.json   10 instrument types, standard points, MPE, guide steps (source of truth)
 ai-service/                     dataset generator, trainer, Flask API
-backend/                        Express + SQLite (better-sqlite3), JWT auth, pdfkit, tests (npm test)
+backend/                        Express + PostgreSQL (pg / Supabase), JWT auth, pdfkit, tests (npm test)
 frontend/                       React + Vite + three.js (procedural 3D models, no external assets)
 ```
 Tests: `cd backend && npm test` runs the whole lifecycle (check -> token -> courier -> certificate -> PDF -> return -> reports) plus permission and validation checks against a throw-away database.
 
 ## Notes / next steps
-* SQLite keeps setup to zero; for multi-site production move to PostgreSQL (SQL is plain and isolated in `src/routes`).
+* Configure PostgreSQL before startup; see [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for initialization, safe SQLite import, tests and Render deployment.
 * Courier tracking is manual (status updates entered by customer / lab). Integrating a courier API would replace `POST /requests/:id/shipment`.
 * Certificates are PDF records with an approval step; they are not digitally signed or ISO/IEC 17025 accredited documents.
 * 3D models are procedural approximations to show *where to read*, not CAD replicas.

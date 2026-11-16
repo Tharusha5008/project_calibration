@@ -48,14 +48,24 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err.code === '23505') return res.status(409).json({ message: 'That record already exists' });      // unique violation
   if (err.code === '23503') return res.status(409).json({ message: 'This record is still in use by other data' }); // foreign key
   if (err.code === '23514') return res.status(400).json({ message: 'A value is not allowed' });           // check constraint
-  console.error(err);
+  console.error('Request failed:', err.code || 'unknown');
   res.status(500).json({ message: 'Something went wrong on the server' });
 });
 
 const PORT = process.env.PORT || 4000;
 if (require.main === module) {
-  db.init()
-    .then(() => app.listen(PORT, () => console.log(`API ready on http://localhost:${PORT}`)))
-    .catch((e) => { console.error('\nCould not connect to the database:', e.message, '\nCheck DATABASE_URL in backend/.env (Supabase: Connect -> Session pooler URI).'); process.exit(1); });
+  db.init().then(() => {
+    const server = app.listen(PORT, () => console.log(`API ready on http://localhost:${PORT}`));
+    const stop = () => {
+      server.close(() => db.close().then(()=>process.exit(0)));
+      setTimeout(()=>process.exit(1), 10000).unref();
+    };
+    process.once('SIGTERM', stop);
+    process.once('SIGINT', stop);
+  }).catch(async () => {
+    console.error('Database initialization failed. Check DATABASE_URL, TLS, privileges and schema; credentials are not logged.');
+    await db.close();
+    process.exitCode = 1;
+  });
 }
 module.exports = app;

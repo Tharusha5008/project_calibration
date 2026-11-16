@@ -7,11 +7,13 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed:demo": "node src/seed-demo.js",
-    "test": "node --test test/e2e.test.js"
+    "test": "node --test test/*.test.js",
+    "db:check": "node src/db-check.js",
+    "db:init": "node src/db-init.js",
+    "db:import": "node scripts/import-sqlite.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
@@ -19,6 +21,14 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "pdfkit": "^0.15.2"
+    "pdfkit": "^0.15.2",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "yaml": "^2.9.1"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

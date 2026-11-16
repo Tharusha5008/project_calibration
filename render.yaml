@@ -1,30 +1,33 @@
-# Render Blueprint: creates the web app + the AI service. See HOSTING.md.
+# Render Blueprint. Set secret values in Render, never in this file.
 services:
   - type: web
     name: calibrateiq
     runtime: node
     plan: free
-    buildCommand: cd frontend && npm ci --include=dev && npm run build && cd ../backend && npm install
-    startCommand: cd backend && node src/server.js
+    buildCommand: cd frontend && npm ci --include=dev && npm run build && cd ../backend && npm ci --omit=dev
+    startCommand: cd backend && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: 22
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL        # paste your Supabase Session pooler URI in the Render dashboard
+      - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
         generateValue: true
-      - key: AI_API_KEY          # same value as on the AI service
+      - key: AI_API_KEY
         sync: false
-      - key: AI_SERVICE_URL      # URL of the calibrateiq-ai service, e.g. https://calibrateiq-ai.onrender.com
+      - key: AI_SERVICE_URL
         sync: false
       - key: LAB_NAME
         sync: false
       - key: LAB_ADDRESS
         sync: false
-
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
   - type: web
     name: calibrateiq-ai
     runtime: python

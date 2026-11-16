@@ -1,3 +1,5 @@
+-- JSON snapshots remain TEXT and flags remain INTEGER to preserve the existing API and SQLite imports.
+-- This schema creates missing objects only; it never drops, truncates or replaces application data.
 -- CalibrateIQ schema for Supabase / PostgreSQL.
 -- The backend runs this automatically on start (every statement is idempotent), so pasting it into
 -- the Supabase SQL Editor is optional. Row Level Security is enabled with NO policies on purpose:

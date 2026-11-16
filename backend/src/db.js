@@ -1,171 +1,124 @@
 require('dotenv').config();
-const path = require('path');
-const fs = require('fs');
-const Database = require('better-sqlite3');
+const { Pool, types } = require('pg');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const fs = require('node:fs');
+const path = require('node:path');
 const bcrypt = require('bcryptjs');
 
-const DB_PATH = path.resolve(process.env.DB_PATH || path.join(__dirname, '..', 'data', 'calibration.db'));
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+// Keep the existing JSON API: numeric counts and ISO date strings, including PDF input.
+types.setTypeParser(20, value => {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n)) throw new RangeError('Database integer exceeds safe JSON range');
+  return n;
+});
+types.setTypeParser(1082, value => value);
+types.setTypeParser(1184, value => new Date(value).toISOString());
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+function poolOptions(env = process.env) {
+  const options = { options: '-c timezone=UTC', max: Number(env.PGPOOL_MAX || 5), connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 };
+  if (env.DATABASE_URL) {
+    let url;
+    try { url = new URL(env.DATABASE_URL); } catch { throw new Error('DATABASE_URL must be a PostgreSQL URL'); }
+    if (!['postgres:', 'postgresql:'].includes(url.protocol)) throw new Error('DATABASE_URL must be a PostgreSQL URL');
+    // Do not allow URL parameters to silently replace our TLS verification settings.
+    for (const key of ['ssl','sslmode','sslcert','sslkey','sslrootcert','uselibpqcompat']) url.searchParams.delete(key);
+    options.connectionString = url.toString();
+    const local = ['localhost','127.0.0.1','[::1]'].includes(url.hostname);
+    if (env.PGSSL === 'disable' && !local) throw new Error('PGSSL=disable is only allowed for a local database');
+    options.ssl = env.PGSSL === 'disable' || local ? false : {
+      rejectUnauthorized: true,
+      ...(env.PGSSLROOTCERT ? { ca: fs.readFileSync(env.PGSSLROOTCERT, 'utf8') } : {})
+    };
+  }
+  return options;
+}
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  full_name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin','technician','user')),
-  organisation TEXT,
-  phone TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Equipment catalogue: one row per instrument TYPE with its standard (reference) test points.
-CREATE TABLE IF NOT EXISTS equipment_types (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  key TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  unit TEXT NOT NULL,
-  decimals INTEGER NOT NULL DEFAULT 2,
-  range_min REAL NOT NULL,
-  range_max REAL NOT NULL,
-  standard TEXT NOT NULL,
-  reference_tool TEXT,
-  read_label TEXT,
-  steps TEXT NOT NULL DEFAULT '[]',     -- JSON array of guide steps
-  points TEXT NOT NULL,                 -- JSON array of {value, mpe, label}
-  model3d TEXT NOT NULL DEFAULT 'generic',
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- A self-check done by a user against one standard point.
-CREATE TABLE IF NOT EXISTS checks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  equipment_type_id INTEGER NOT NULL REFERENCES equipment_types(id),
-  serial_no TEXT NOT NULL,
-  point_index INTEGER NOT NULL,
-  nominal_value REAL NOT NULL,
-  measured_value REAL NOT NULL,
-  mpe REAL NOT NULL,
-  error REAL NOT NULL,
-  error_ratio REAL NOT NULL,            -- |error| / mpe as a FRACTION (1.0 == at the limit)
-  verdict TEXT NOT NULL CHECK (verdict IN ('within','warning','out')),
-  suspicious INTEGER NOT NULL DEFAULT 0,
-  context TEXT NOT NULL DEFAULT '{}',   -- JSON: age, days since cal, usage, temp, humidity, prev result (+ which were assumed)
-  ai TEXT,                              -- JSON snapshot of the AI service answer (or null)
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- A calibration "token": the job ticket that follows an instrument through the lab.
-CREATE TABLE IF NOT EXISTS requests (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  token TEXT NOT NULL UNIQUE,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  equipment_type_id INTEGER NOT NULL REFERENCES equipment_types(id),
-  check_id INTEGER REFERENCES checks(id),
-  serial_no TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'booked',
-  technician_id INTEGER REFERENCES users(id),
-  handover_method TEXT CHECK (handover_method IN ('physical','courier')),
-  courier_name TEXT,
-  tracking_no TEXT,
-  return_method TEXT CHECK (return_method IN ('pickup','courier')),
-  return_courier TEXT,
-  return_tracking_no TEXT,
-  calibration_data TEXT,                -- JSON array of {value, mpe, as_found, as_left}
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
-CREATE INDEX IF NOT EXISTS idx_requests_user ON requests(user_id);
-CREATE INDEX IF NOT EXISTS idx_requests_tech ON requests(technician_id);
-
--- Timeline: status changes, shipment (courier) tracking updates and notes.
-CREATE TABLE IF NOT EXISTS request_events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('status','shipment','note')),
-  title TEXT NOT NULL,
-  detail TEXT,
-  direction TEXT,                       -- shipment only: inbound | return
-  actor_id INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_events_request ON request_events(request_id);
-
-CREATE TABLE IF NOT EXISTS certificates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  number TEXT NOT NULL UNIQUE,
-  request_id INTEGER NOT NULL UNIQUE REFERENCES requests(id),
-  technician_id INTEGER NOT NULL REFERENCES users(id),
-  result TEXT NOT NULL CHECK (result IN ('PASS','ADJUSTED','FAIL')),
-  data TEXT NOT NULL,                   -- JSON snapshot of calibration points
-  remarks TEXT,
-  environment TEXT,                     -- JSON {temperature, humidity}
-  approval_status TEXT NOT NULL DEFAULT 'pending' CHECK (approval_status IN ('pending','approved','rejected')),
-  approved_by INTEGER REFERENCES users(id),
-  approved_at TEXT,
-  rejection_reason TEXT,
-  issued_at TEXT NOT NULL DEFAULT (datetime('now')),
-  valid_until TEXT
-);
-
--- Feedback (technician/user) and issues (user) with admin replies.
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  request_id INTEGER REFERENCES requests(id) ON DELETE CASCADE,
-  author_id INTEGER NOT NULL REFERENCES users(id),
-  kind TEXT NOT NULL CHECK (kind IN ('feedback','issue','reply')),
-  parent_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
-  subject TEXT,
-  body TEXT NOT NULL,
-  rating INTEGER CHECK (rating BETWEEN 1 AND 5),
-  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-`);
-
-function seedCatalog() {
-  const count = db.prepare('SELECT COUNT(*) c FROM equipment_types').get().c;
-  if (count > 0) return;
-  const catalogPath = path.join(__dirname, '..', '..', 'shared', 'equipment-catalog.json');
-  const local = path.join(__dirname, '..', 'data', 'equipment-catalog.json');
-  const file = fs.existsSync(catalogPath) ? catalogPath : local;
-  const catalog = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const ins = db.prepare(`INSERT INTO equipment_types
-    (key,name,unit,decimals,range_min,range_max,standard,reference_tool,read_label,steps,points,model3d)
-    VALUES (@key,@name,@unit,@decimals,@rmin,@rmax,@standard,@ref,@read,@steps,@points,@model3d)`);
-  db.transaction(() => {
-    for (const c of catalog) {
-      ins.run({ key: c.key, name: c.name, unit: c.unit, decimals: c.decimals, rmin: c.range[0], rmax: c.range[1],
-        standard: c.standard, ref: c.reference_tool, read: c.read_label, steps: JSON.stringify(c.steps),
-        points: JSON.stringify(c.points), model3d: c.model3d });
+// Only SQL owned by this application enters here. Values always go separately to pg.
+// Supports dynamic filter fragments without interpolating any request values into SQL.
+function bind(sql, args) {
+  const values = [], names = new Map();
+  const named = args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0]);
+  let index = 0;
+  const text = sql.replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\?|@([a-zA-Z_]\w*)/g, (token, name) => {
+    if (token[0] === "'" || token[0] === '"') return token;
+    if (name) {
+      if (!named || !Object.hasOwn(args[0], name)) throw new Error('Missing SQL parameter');
+      if (!names.has(name)) { names.set(name, values.length + 1); values.push(args[0][name]); }
+      return '$' + names.get(name);
     }
-  })();
-  console.log(`Seeded ${catalog.length} equipment types`);
+    if (named || index >= args.length) throw new Error('Missing SQL parameter');
+    values.push(args[index++] ?? null);
+    return '$' + values.length;
+  });
+  if (!named && index !== args.length) throw new Error('Unexpected SQL parameters');
+  return { text, values };
 }
 
-function seedUsers() {
-  const count = db.prepare('SELECT COUNT(*) c FROM users').get().c;
-  if (count > 0) return;
-  const ins = db.prepare('INSERT INTO users (full_name,email,password_hash,role,organisation) VALUES (?,?,?,?,?)');
-  const demo = [
-    ['Lab Administrator', 'admin@lab.test', 'Admin@123', 'admin', 'Calibration Lab'],
-    ['Tara Technician', 'tech@lab.test', 'Tech@123', 'technician', 'Calibration Lab'],
-    ['Sam Technician', 'tech2@lab.test', 'Tech@123', 'technician', 'Calibration Lab'],
-    ['Uma User', 'user@lab.test', 'User@123', 'user', 'Acme Manufacturing'],
-  ];
-  for (const [n, e, p, r, o] of demo) ins.run(n, e, bcrypt.hashSync(p, 10), r, o);
-  console.log('Seeded demo accounts (change these passwords before real use)');
+function createDatabase(pool) {
+  const context = new AsyncLocalStorage();
+  const db = {
+    pool,
+    async query(text, values = []) { return (context.getStore() || pool).query(text, values); },
+    async get(sql, ...args) { const q = bind(sql, args); return (await db.query(q.text, q.values)).rows[0]; },
+    async all(sql, ...args) { const q = bind(sql, args); return (await db.query(q.text, q.values)).rows; },
+    async run(sql, ...args) {
+      const q = bind(sql, args);
+      if (/^\s*INSERT\b/i.test(sql) && !/\bRETURNING\b/i.test(sql)) q.text += ' RETURNING id';
+      const result = await db.query(q.text, q.values);
+      return { changes: result.rowCount, lastInsertRowid: result.rows[0]?.id };
+    },
+    async transaction(fn) {
+      // Nested helpers participate in the outer unit of work; errors propagate to its rollback.
+      if (context.getStore()) return fn();
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await context.run(client, fn);
+        await client.query('COMMIT');
+        return result;
+      } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { /* preserve the original error */ }
+        throw err;
+      } finally { client.release(); }
+    },
+    async init({ seedCatalog = true, seedDemo = process.env.SEED_DEMO_USERS === 'true', bootstrap = true } = {}) {
+      await db.transaction(async () => {
+        await db.query('SELECT pg_advisory_xact_lock(8675309)');
+        await db.query(fs.readFileSync(path.join(__dirname, '../../supabase/schema.sql'), 'utf8'));
+        // Import initializes with both seed options disabled, preserving catalogue IDs.
+        if (seedCatalog && !(await db.get('SELECT COUNT(*) c FROM equipment_types')).c) {
+          const catalog = require('../../shared/equipment-catalog.json');
+          for (const c of catalog) await db.run(`INSERT INTO equipment_types
+            (key,name,unit,decimals,range_min,range_max,standard,reference_tool,read_label,steps,points,model3d)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, c.key,c.name,c.unit,c.decimals,c.range[0],c.range[1],c.standard,c.reference_tool,c.read_label,JSON.stringify(c.steps),JSON.stringify(c.points),c.model3d);
+        }
+        if (seedDemo && process.env.NODE_ENV === 'production') throw new Error('Demo accounts are disabled in production');
+        if (!(await db.get('SELECT COUNT(*) c FROM users')).c) {
+          if (seedDemo) {
+            for (const [name,email,password,role] of [
+              ['Lab Administrator','admin@lab.test','Admin@123','admin'],
+              ['Tara Technician','tech@lab.test','Tech@123','technician'],
+              ['Sam Technician','tech2@lab.test','Tech@123','technician'],
+              ['Uma User','user@lab.test','User@123','user']
+            ]) await db.run('INSERT INTO users(full_name,email,password_hash,role,organisation) VALUES (?,?,?,?,?)',name,email,await bcrypt.hash(password,10),role,'Calibration Lab');
+          } else if (bootstrap && process.env.BOOTSTRAP_ADMIN_EMAIL) {
+            const password = process.env.BOOTSTRAP_ADMIN_PASSWORD || '';
+            if (password.length < 12) throw new Error('BOOTSTRAP_ADMIN_PASSWORD must have at least 12 characters');
+            await db.run('INSERT INTO users(full_name,email,password_hash,role) VALUES (?,?,?,?)', 'Lab Administrator',process.env.BOOTSTRAP_ADMIN_EMAIL.trim(),await bcrypt.hash(password,12),'admin');
+          }
+        }
+      });
+    },
+    async close() { await pool.end(); }
+  };
+  return db;
 }
-
-seedCatalog();
-seedUsers();
-
-module.exports = db;
+const pool = new Pool(poolOptions());
+pool.on('error', err => console.error('Idle database connection failed:', err.code || 'unknown'));
+const db = createDatabase(pool);
+const init = db.init;
+db.init = async (...args) => {
+  if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL before initializing the database');
+  return init(...args);
+};
+module.exports = Object.assign(db, { createDatabase, poolOptions, bind });

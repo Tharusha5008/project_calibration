@@ -1,52 +1,33 @@
-# Using Supabase as the database
+# Supabase PostgreSQL setup and data migration
 
-CalibrateIQ stores everything (users, equipment catalogue, checks, tokens, certificates, messages) in
-PostgreSQL. Supabase is hosted PostgreSQL, so you only need its **connection string**.
+The Express backend uses `pg` directly with your Supabase PostgreSQL **Session pooler** URI (port 5432). It keeps its own JWT accounts; Supabase Auth is not required.
 
-## 1. Create the project
-1. Go to https://supabase.com -> **New project**. Pick a region close to you and set a **database password** (save it).
-2. Wait ~2 minutes for it to finish provisioning.
+## Before deployment
 
-## 2. Copy the connection string
-1. In the project, click **Connect** (top bar) -> **Session pooler**.
-2. Copy the URI. It looks like  
-   `postgresql://postgres.abcdefghijkl:[YOUR-PASSWORD]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres`
-3. Replace `[YOUR-PASSWORD]` with your real password. If it contains `@ : / # ?` or spaces, URL-encode them
-   (`@` -> `%40`, `#` -> `%23`, `/` -> `%2F`, `:` -> `%3A`). Easiest: reset the password to letters and digits only.
+Rotate the database password and JWT secret previously pasted in chat. An AI API key was also present in the old Render configuration: replace it on both services. Removed credentials remain in Git history; removing them from a file does not revoke them. Never paste the replacement values into chat or commit them.
 
-> Use the **Session pooler** URI. The "Direct connection" host is IPv6-only on many home/office networks and will fail with `ENOTFOUND`.
+Copy `backend/.env.example` to `backend/.env`. Set DATABASE_URL from Supabase Connect, URL-encoding special characters in the password. Keep credentials only in this ignored file or Render environment settings. Set a strong JWT_SECRET. Remote connections verify TLS certificates; if your server needs a private root certificate, set PGSSLROOTCERT to its PEM file path. SSL URL options are removed so they cannot override this verification. PGSSL=disable is allowed only for localhost.
 
-## 3. Put it in the app
-Open `backend/.env` (created from `.env.example` the first time you run setup) and set:
-```
-DATABASE_URL=postgresql://postgres.abcdefghijkl:YourRealPassword@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
-JWT_SECRET=<a long random string>
-```
+Use Node 22+ and run `npm ci` in backend. `npm run db:check` only checks connectivity; `npm run db:init` explicitly creates missing application tables, indexes, RLS, and the catalogue. Server startup runs the same non-destructive initialization. Existing rows are never replaced. Use the postgres owner connection (or a suitably privileged backend role that can bypass RLS); anonymous Supabase REST access has no policies. Do not use a Supabase service key as DATABASE_URL.
 
-## 4. Test and run
-```
-cd backend
-npm run db:check      # prints "Connected to database ..." and creates the tables
-cd ..
-.\start.ps1           # Windows   (or ./start.sh on Mac/Linux)
-```
-On first start the app **creates all tables automatically** and loads the 10 instrument types and the demo accounts.
-You can verify in Supabase -> **Table Editor**: `users`, `equipment_types`, `checks`, `requests`, `request_events`, `certificates`, `messages`.
+For a fresh production installation, set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD (12+ characters). An admin is created only when users is empty. Remove these variables after successful initialization. Existing installations keep all accounts and password hashes. Demo accounts are created only with SEED_DEMO_USERS=true outside production. `npm run seed:demo` drives the existing API and needs those demo accounts; it intentionally adds records and is for a disposable development environment.
 
-Optional: load demo tokens (with the app running): `cd backend && npm run seed:demo`.
+## Preserve existing SQLite data
 
-## Security notes
-* **Row Level Security is enabled on every table with no policies.** The app connects directly as the database owner, so it is
-  unaffected, but nobody can read or write your data through Supabase's public REST API using the `anon` key.
-* Never put the database password or the `service_role` key in the frontend or commit `backend/.env`.
-* Before real use: delete or change the demo accounts (admin@lab.test, tech@lab.test, user@lab.test) and set `SEED_DEMO_USERS=false`
-  in `.env` if you do not want them recreated on an empty database.
-* Supabase free projects pause after about a week of inactivity - restore from the dashboard if the app suddenly cannot connect.
+1. Stop writes to the old app. Take a consistent SQLite backup with SQLite's backup command/API (do not copy a live WAL database file by itself). Keep the original backup and original application available for rollback. Back up any existing Supabase data separately.
+2. Use a NEW, empty PostgreSQL database/project as the destination. Do not start the new server or db:init before import: automatic catalogue seeding would make the destination nonempty.
+3. With Python 3 available, run from backend: `npm run db:import -- /absolute/path/to/backup.db`. This dry run opens SQLite read-only, validates integrity/foreign keys, prints row counts, and never connects to PostgreSQL.
+4. Set the destination DATABASE_URL locally, then run `npm run db:import -- /absolute/path/to/backup.db --apply`. Schema initialization disables all seeds. Import takes table locks, refuses any populated destination, inserts every column including IDs, JSON snapshots, dates, password hashes, events and parent replies in dependency order, verifies counts, and advances ID sequences. Failure rolls back the import; it never deletes/updates the SQLite source or merges into existing destination data.
+5. Compare the reported row counts with the backup, sign in with existing accounts, review old certificates/PDFs and reports, and test one new workflow before switching traffic. Keep the old app stopped during cutover. If verification fails, keep using the original backup/app and investigate in a separate empty destination.
 
-## Moving data from the old SQLite version
-The previous version kept data in a local `calibration.db`. That data is not migrated automatically (it was demo data). If you have
-real records you need to keep, tell me and I will write an export/import script.
+If Supabase already has application rows, this tool will stop. A bespoke conflict-resolution migration is needed to combine databases; do not clear existing data to force an import.
 
-## Running the automated tests
-`npm test` needs a PostgreSQL database. It defaults to `postgres://postgres:postgres@localhost:54329/cal`; set `TEST_DATABASE_URL`
-to use another (it runs inside a temporary schema that is dropped at the end, so existing data is untouched).
+## Tests
+
+`npm test` runs the lifecycle plus migration/rollback/parameterization checks against disposable in-memory PGlite (the PostgreSQL engine compiled to WASM). It does not use DATABASE_URL or any production credentials. Set TEST_DATABASE_URL explicitly to run the same SQL and lifecycle through the real pg driver; tests create a random cal_test_* schema and remove only that schema. The test login seed uses known sample passwords only inside this isolated database. Hosted Supabase network/TLS verification still needs `npm run db:check` with your rotated credentials.
+
+## Render
+
+The root render.yaml builds the frontend and installs backend production dependencies with the lockfile. Set DATABASE_URL, AI_SERVICE_URL and the same new AI_API_KEY on both services. JWT_SECRET is generated by Render for new services; replace any previously exposed value on existing services. Set bootstrap variables only for a fresh database. `/api/health` returns 503 if PostgreSQL is unavailable. No SQLite disk or destructive reset command is used.
+
+All SQL values are bound as PostgreSQL parameters. Workflow writes hold a shared application advisory transaction lock so competing state transitions, bookings and certificate numbering are serialized across server instances. This favors consistency for a small lab; a high-throughput deployment can later replace the global lock with per-instrument/per-request locks. Transactions use one checked-out pg client, including event helpers and nested transaction calls. JSON responses for wrapped writes are sent only after commit.
